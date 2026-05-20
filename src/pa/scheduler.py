@@ -6,6 +6,7 @@ are best-effort; failures are logged and the next tick will retry.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import subprocess
 from datetime import date, datetime
@@ -69,7 +70,7 @@ async def _reindex() -> None:
 
 def _try_notify(title: str, message: str) -> None:
     """Fire a macOS notification via osascript. Silent failure if unavailable."""
-    try:
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
         subprocess.run(
             [
                 "osascript",
@@ -79,8 +80,6 @@ def _try_notify(title: str, message: str) -> None:
             check=False,
             timeout=2,
         )
-    except (OSError, subprocess.SubprocessError):
-        pass
 
 
 def build_scheduler() -> AsyncIOScheduler:

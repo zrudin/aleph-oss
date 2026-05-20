@@ -50,6 +50,8 @@ if _HAS_VAULT_TOOLS:
             "read_file": files.read_file,
             "write_file": files.write_file,
             "append_to_file": files.append_to_file,
+            "update_section": files.update_section,
+            "update_frontmatter": files.update_frontmatter,
             "semantic_search": search.semantic_search,
             "text_search": search.text_search,
             "list_reminders": reminders.list_reminders,
@@ -120,6 +122,49 @@ _SCHEMAS: list[dict] = [
             "content": {"type": "string"},
         },
         ["path", "content"],
+    ),
+    _schema(
+        "update_section",
+        "Replace the body under a single Markdown heading in an existing note, "
+        "leaving frontmatter and other sections untouched. Use this — not "
+        "write_file — to edit one section of a longer note (e.g., the user's "
+        "`## Current focus` in profile.md). Errors if the heading isn't there.",
+        {
+            "path": {"type": "string", "description": "Vault-relative file path."},
+            "heading": {
+                "type": "string",
+                "description": (
+                    "Heading text without leading '#'s, e.g. 'Current focus'. "
+                    "Matches the first heading with this exact text at any level."
+                ),
+            },
+            "new_body": {
+                "type": "string",
+                "description": (
+                    "Replacement body for the section (no heading line). May be "
+                    "empty to clear the section."
+                ),
+            },
+        },
+        ["path", "heading", "new_body"],
+    ),
+    _schema(
+        "update_frontmatter",
+        "Set a single YAML frontmatter key on an existing note (e.g., "
+        "`last_contact`, `cadence_weeks`, `status`, `tags`). Body is preserved "
+        "verbatim. Use this — not write_file — for durable structured fields.",
+        {
+            "path": {"type": "string", "description": "Vault-relative file path."},
+            "key": {"type": "string", "description": "Frontmatter key, e.g. 'last_contact'."},
+            "value": {
+                "type": ["string", "number", "boolean", "null", "array"],
+                "description": (
+                    "New value. Use an ISO date string for dates (e.g. "
+                    "'2026-05-19'); a number for counts; a JSON array for tags."
+                ),
+            },
+        },
+        ["path", "key", "value"],
     ),
     _schema(
         "semantic_search",

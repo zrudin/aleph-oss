@@ -105,9 +105,13 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
 }
 
 /* ── Aleph monogram ─────────────────────────────────────────────── */
+/* All Aleph (א) glyphs in the app — the brand mark and the thinking
+   animation — share the same Rubik face so the silhouette stays
+   consistent. Variable axis 400..700 is requested for the weight-bump
+   animation; static contexts just pick a fixed weight via inline style. */
 .aleph-mark {
   display: inline-block;
-  font-family: "Cormorant Garamond", "EB Garamond", "Source Serif 4", Georgia, serif;
+  font-family: "Rubik", system-ui, "Helvetica Neue", Arial, sans-serif;
   color: var(--green);
   line-height: 1;
   font-weight: 500;
@@ -535,15 +539,6 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
   overflow-x: auto;
 }
 .msg-assistant .prose pre code { background: transparent; padding: 0; }
-.msg-assistant .caret {
-  display: inline-block;
-  width: 1px;
-  height: 18px;
-  background: var(--green);
-  margin-left: 2px;
-  vertical-align: -3px;
-  animation: caret-blink 1s steps(1) infinite;
-}
 
 .msg-tool {
   align-self: flex-start;
@@ -567,11 +562,6 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
   font-size: 11px;
 }
 .msg-tool .sep { color: var(--faint); }
-
-@keyframes caret-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
-}
 
 /* ── File view ─────────────────────────────────────────────────── */
 .file-path {

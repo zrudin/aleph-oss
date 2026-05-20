@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from pa.config import settings
+from pa.llm import get_llm, installed_model_names, model_installed
 from pa.mcp import MCPManager, MCPServer
 from pa.memory.index import get_index
 from pa.memory.watcher import VaultWatcher
@@ -43,6 +44,8 @@ async def lifespan(app: FastAPI):
 
     vault.bootstrap()
     log.info("vault ready at %s", vault.root)
+
+    await _log_ollama_preflight()
 
     # Initial reindex is best-effort; if Ollama isn't up, we'll keep serving
     # chat (which will surface a clearer error) rather than block startup.
@@ -81,6 +84,43 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
         await watcher.stop()
         log.info("shutdown complete")
+
+
+async def _log_ollama_preflight() -> None:
+    """Log whether Ollama is reachable and the configured models are installed.
+
+    Best-effort: we don't fail startup if Ollama is down — chat itself will
+    surface the error — but we want the log to make the problem obvious.
+    """
+    llm = get_llm()
+    try:
+        listed = await llm.list_models()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "ollama preflight: cannot reach %s (%s: %s) — chat will fail until "
+            "this is fixed",
+            llm.host, type(exc).__name__, exc,
+        )
+        return
+
+    names = installed_model_names(listed)
+    log.info(
+        "ollama preflight: %s reachable, %d models installed (%s)",
+        llm.host, len(names), ", ".join(sorted(names)) if names else "<none>",
+    )
+    installed = set(names)
+    for required, label in (
+        (settings.chat_model, "chat"),
+        (settings.embed_model, "embed"),
+    ):
+        if model_installed(required, installed):
+            log.info("ollama %s model %r is installed", label, required)
+        else:
+            log.warning(
+                "ollama %s model %r is NOT installed — run `ollama pull %s` "
+                "(or `make ollama-pull`)",
+                label, required, required,
+            )
 
 
 def _build_mcp_specs() -> list[MCPServer]:

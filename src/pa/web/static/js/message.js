@@ -1,6 +1,7 @@
 // User / assistant / tool message renderers.
 
 import { alephMark } from './aleph-mark.js';
+import { alephThinkingHtml } from './aleph-thinking.js';
 import { renderMarkdown, escape } from './markdown.js';
 
 function fmtTime(iso) {
@@ -20,11 +21,16 @@ export function renderUser(msg) {
 
 export function renderAssistant(msg, { streaming = false } = {}) {
   const body = renderMarkdown(msg.content || '');
-  const caret = streaming ? '<span class="caret"></span>' : '';
+  // Before the first token arrives we show the AlephThinking indicator
+  // (three pulsing alephs + an elapsed-time counter) inside the empty
+  // prose container. paintAssistant() in chat-view.js then overwrites
+  // .prose with rendered markdown when the first token lands. No
+  // streaming caret — the indicator is the only "still thinking" cue.
+  const trail = streaming && !msg.content ? alephThinkingHtml({ size: 22 }) : '';
   return `
     <div class="msg-assistant" data-role="assistant">
       <div class="who">${alephMark({ size: 12 })} Aleph</div>
-      <div class="prose">${body}${caret}</div>
+      <div class="prose">${body}${trail}</div>
     </div>`;
 }
 

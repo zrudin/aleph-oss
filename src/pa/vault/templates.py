@@ -12,6 +12,7 @@ _PROFILE = """\
 ---
 type: profile
 name: {name}
+first_run_complete: false
 ---
 # {name}
 

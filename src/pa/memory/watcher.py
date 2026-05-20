@@ -7,6 +7,7 @@ seconds later" work without any manual reindex step.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -23,7 +24,11 @@ _DEBOUNCE_SECONDS = 1.5
 
 
 class _Handler(FileSystemEventHandler):
-    def __init__(self, loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[tuple[str, Path]]) -> None:
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        queue: asyncio.Queue[tuple[str, Path]],
+    ) -> None:
         self._loop = loop
         self._queue = queue
 
@@ -83,10 +88,8 @@ class VaultWatcher:
             self._observer = None
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):  # noqa: BLE001
                 await self._task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
             self._task = None
 
     async def _consume(self) -> None:
@@ -98,9 +101,11 @@ class VaultWatcher:
             # Debounce: keep draining until quiet.
             try:
                 while True:
-                    kind, path = await asyncio.wait_for(self._queue.get(), timeout=_DEBOUNCE_SECONDS)
+                    kind, path = await asyncio.wait_for(
+                        self._queue.get(), timeout=_DEBOUNCE_SECONDS
+                    )
                     self._pending[path] = kind
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
             batch = list(self._pending.items())

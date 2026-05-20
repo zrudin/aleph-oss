@@ -21,7 +21,7 @@ export function render(target, { onSend, onOpenTools } = {}) {
             <span class="count">${enabled}/${total}</span>
           </button>
           <div class="composer-help">
-            <span>⌘↵ send</span>
+            <span>↵ send · ⇧↵ newline</span>
             <span>@ to mention a note</span>
           </div>
         </div>
@@ -49,7 +49,7 @@ export function render(target, { onSend, onOpenTools } = {}) {
 
   sendBtn.addEventListener('click', submit);
   ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       submit();
     }

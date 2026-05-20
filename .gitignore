@@ -35,5 +35,5 @@ htmlcov/
 .vscode/
 *.swp
 
-# Private release docs (never ship to the public mirror)
-/RELEASE.md
+# Per-worktree resumable plan files (see CLAUDE.md "Resumable plans")
+PLAN.md

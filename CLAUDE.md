@@ -89,10 +89,137 @@ FastAPI router serves Jinja templates from `src/pa/web/templates`, static assets
 
 ## Workflow: branches and PRs
 
-Never commit directly to `main`. For every task:
+Never commit directly to `main`. Multiple Claude Code sessions may run in parallel against this repo, so a bare feature branch in the shared checkout is unsafe — `git switch` flips files under any other session in that checkout. **Every task must run in its own git worktree**, never in the parent checkout on `main`.
 
-1. **Start on an isolated workspace** — either a fresh feature branch off `main` (`git switch -c feat/<short-slug>`) or a git worktree (`git worktree add ../pa-<slug> -b feat/<slug>`). If the user invokes you on `main`, branch before making any changes.
-2. **Commit your work to that branch.**
-3. **When the task is done, open a PR to `main`** with `gh pr create`, then merge and close it with `gh pr merge --merge --delete-branch` (a regular merge commit). **Do NOT squash-merge** — the user wants every individual commit preserved on `main`, even if that means a lot of commits in the history. Only use a different strategy if the user explicitly asks for one. Report the PR URL in your final message.
+For every task:
+
+1. **Check for in-progress work before creating anything new.** A previous session may have been interrupted, leaving a worktree with WIP that this task could resume. Run `git worktree list` and, for each non-`main` worktree, read its `PLAN.md` at the worktree root (see "Resumable plans" below). If you find a worktree whose plan plausibly matches the user's current request, surface it to them — e.g. *"I see in-progress work on branch `feat/foo-…` with 3 unchecked steps in `PLAN.md`. Resume that, or start fresh?"* — and wait for their answer. **Never auto-resume**; the agent that left the WIP may have been on a different mental model, and conflating two tasks is worse than starting clean.
+2. **Create a worktree with a uniquified slug, based on the freshest `origin/main`.** Use a timestamped slug so two sessions can't collide on branch name or directory name, and `git fetch origin` first so you don't accidentally branch off a parent checkout that's behind the remote:
+
+   ```bash
+   git fetch origin                              # make sure origin/main is current
+   slug="<short-task-slug>-$(date +%Y%m%d-%H%M%S)"
+   git worktree add ../aleph-$slug -b <prefix>/$slug origin/main   # prefix: feat, fix, chore, docs, …
+   cd ../aleph-$slug
+   ```
+
+   Explicitly basing the new branch on `origin/main` (not the parent checkout's `HEAD`) avoids the classic foot-gun where the parent checkout hasn't been `git pull`ed in a while and your "fresh" branch is actually missing commits already on the remote. If the user mentions they just pushed or pulled something, re-fetch before branching to be sure.
+
+   If you were already invoked inside an existing worktree (not the parent `aleph/` checkout on `main`), keep working in it instead of nesting another one. The rule is one task per worktree.
+3. **Commit your work to that branch.** Stay inside the worktree; do not operate on the parent checkout or on `main` directly.
+4. **When the task is done, open a PR to `main`** with `gh pr create`, then merge and close it with `gh pr merge --merge --delete-branch` (a regular merge commit). **Do NOT squash-merge** — the user wants every individual commit preserved on `main`, even if that means a lot of commits in the history. Only use a different strategy if the user explicitly asks for one. Report the PR URL in your final message.
+5. **Remove the worktree** once the PR is merged, best-effort: `git -C <parent-checkout> worktree remove ../aleph-$slug`. The merge commit is already on `main`; this just frees the sibling directory. If the agent can't safely `cd` out of the worktree to remove it, leave a note for the user and move on.
 
 Apply this even for small changes — the user expects every task to land via a reviewed, merged PR rather than a direct push.
+
+### Resumable plans for multi-step tasks
+
+For any task with more than a couple of steps, drop a `PLAN.md` at the root of your worktree the first time you settle on a multi-step approach, and update it as you go. `PLAN.md` is gitignored — it stays on disk so a future session can resume from it, but it never enters commits or PRs.
+
+Format is a plain checklist; keep it terse, one line per step:
+
+```markdown
+# Plan: <one-line task summary>
+
+- [x] Stand up worktree and read related code
+- [ ] Update `src/pa/foo.py` to handle the new case
+- [ ] Add tests in `tests/test_foo.py`
+- [ ] Run `make lint && make test`
+- [ ] Open PR
+
+next: editing `_handle_x` in foo.py — about to wire up the early-return branch.
+```
+
+Conventions:
+
+- **Check items off as you complete them.** Don't batch; if you've done it, mark it.
+- **Add new items if scope shifts.** A plan that no longer reflects reality is worse than no plan.
+- **Leave a `next:` line at the bottom** before any context-risky moment (long command, large refactor step) so an interrupted session knows where to pick up.
+- **On resume**, read `PLAN.md` first thing and continue from the first unchecked item. If the plan looks stale or doesn't match what the user is now asking for, surface that to them rather than blindly resuming.
+- **Don't create `PLAN.md` for trivial single-step tasks** (one-line edits, simple renames). The cost of writing the file exceeds the value of resumability.
+- `PLAN.md` is throwaway and gets removed with the worktree at step 5. It does not need to be tidied up before opening the PR.
+
+### Parallel sessions: shared state outside git
+
+A worktree isolates the working tree and the branch. These things are still shared across all parallel sessions and need explicit coordination — Git won't protect you here:
+
+- **`make dev` binds `127.0.0.1:8765`.** Only one session can run the FastAPI server at a time. Don't try to start a second `make dev`; instead, see "Self-testing" below for the throwaway-port pattern.
+- **The vault is shared mutable state.** `<vault>/.pa/index.lance/`, `<vault>/threads/`, and the `VaultWatcher` are not safe for concurrent writers. Don't trigger a real reindex, write thread files, or run anything that mutates the live vault when another session might be doing the same. Tests that use a temporary vault fixture are fine and should be preferred.
+- **Don't touch the parent checkout's `main`.** Let the user manage the parent checkout. Worktree sessions push their branch, open a PR, optionally remove their worktree, and stop there — they never `git pull` or `git checkout main` in the parent.
+- **Only push to `origin`.** The `public` mirror is a single-writer release flow owned by the maintainer (see below). Never push from a parallel session.
+
+## Self-testing and verification
+
+Be proactive about confirming changes actually work before declaring them done. The user can't see most tool calls — when you say "this is fixed," they trust it. The harness can run short read-only probes and isolated server instances freely; use them.
+
+### Spin up a parallel instance when changes touch the running app
+
+If your change affects HTTP endpoints, SSE streams, the agent loop, lifespan, or anything the live server exposes, start your own instance on a non-default port against a throwaway vault and exercise it before reporting the work done. The defaults would collide with the user's `make dev`; explicit overrides make a parallel instance safe:
+
+```bash
+PA_PORT=8766 \
+PA_VAULT_PATH=/tmp/aleph-test-vault-$USER \
+PA_VAULT_REQUIRE_MOUNT=false \
+uv run python -m pa
+```
+
+Then `curl http://127.0.0.1:8766/health`, `curl http://127.0.0.1:8766/ollama/status`, POST to `/chat` and read the SSE stream, etc. Stop the instance when done. The throwaway vault lets you write threads, reindex, and mutate state without touching the user's real vault.
+
+For driving multi-turn chat conversations against the parallel instance, `scripts/dev-chat.py` consumes the `/chat` SSE stream and prints a per-turn digest (assistant text, every tool call with arguments, generated title). Pass `--thread <id>` to continue a thread across invocations:
+
+```bash
+uv run python scripts/dev-chat.py --base http://127.0.0.1:8766 "hi"
+uv run python scripts/dev-chat.py --base http://127.0.0.1:8766 --thread <id> "follow up"
+```
+
+UI changes (CSS, layout, focus, animation) still need a browser, and a browser still needs the user. When you've verified the backend but can't verify the rendered UI, **say so explicitly** rather than implying the whole change is tested.
+
+### Probe external APIs before parsing them
+
+Before writing code that parses a response from an external library or service (Ollama, MCP server, third-party API), confirm its actual shape with a tiny script. Two minutes of probing beats shipping a parser based on how the API "should" look:
+
+```bash
+uv run python -c "
+import asyncio
+from ollama import AsyncClient
+async def main():
+    resp = await AsyncClient().list()
+    print('type:', type(resp).__name__)
+    print('has .models:', hasattr(resp, 'models'))
+    print('first entry:', dir(resp.models[0]) if getattr(resp, 'models', None) else 'none')
+asyncio.run(main())
+"
+```
+
+These probes are read-only and don't bind ports — run them freely. Especially do this when a library has bumped a major version (pydantic v1 → v2, ollama 0.3 → 0.6, etc.) or when the docs and the installed version disagree.
+
+### Tests are part of the change, not a follow-up
+
+When adding or refactoring code, write tests for the new behavior in the same PR:
+
+- The new happy path.
+- Whatever edge case motivated the change (the bug that triggered the fix, the case the user mentioned).
+- Each new error-handling branch.
+
+`make test` must pass before you open the PR — that's the floor. If a test would have caught the bug you're fixing, write that test too, so a future regression surfaces immediately instead of waiting for the user to try the feature again. A "tested" claim without a corresponding committed test is a claim about the past, not a guard against the future.
+
+## Public mirror
+
+This project has two GitHub repos:
+
+- **`origin`** → `zrudin/aleph` (private) — where day-to-day development happens. All PRs land here.
+- **`public`** → `zrudin/aleph-oss` (public mirror) — a curated subset, pushed manually from a `public-main` orphan branch.
+
+When working in this repo, **only push to `origin`**. Never push to the `public` remote — that's a manual release flow the maintainer owns. A local `.git/hooks/pre-push` refuses `main → public` as a backstop.
+
+Files that intentionally do **not** ship to the public mirror:
+
+- `TODO.md` — personal local paths.
+- `.github/workflows/claude*.yml` — would trigger on any contributor's `@claude` mention.
+- `RELEASE.md` — private maintainer notes (tracked on `origin`, excluded from the public mirror by `scripts/check-public-safe.sh`).
+
+If you add a file that should be tracked on `origin` but **must not** ship publicly (maintainer-only scripts, personal notes, release docs, etc.), commit it normally and add its path to the `PRIVATE_PATHS` array in `scripts/check-public-safe.sh`, plus document it in `RELEASE.md`. The safety script does two things: (a) greps tracked files for blocklisted personal info, and (b) refuses to proceed if any path in `PRIVATE_PATHS` is tracked on the branch being released. Don't use `.gitignore` for this — the goal is that the private repo retains everything; only the public mirror omits these files.
+
+**Detailed public-sync recipe lives in `RELEASE.md`** at the repo root. It is tracked on the private `origin` only — the safety script refuses to push if `RELEASE.md` appears on `public-main` — so it won't be present in the public mirror.
+
+Note: `CLAUDE.md` itself ships to the public mirror. Don't put PII, maintainer-only secrets, or private-context-only details in this file.

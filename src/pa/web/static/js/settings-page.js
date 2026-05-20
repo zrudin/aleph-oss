@@ -215,7 +215,8 @@ function renderAppearance(host) {
 
 function renderShortcuts(host) {
   const rows = [
-    ['⌘ ↵', 'send message'],
+    ['↵', 'send message'],
+    ['⇧ ↵', 'newline in composer'],
     ['⌘ N', 'new entry (chat / task / note)'],
     ['⌘ /', 'toggle tools panel'],
     ['⌘ ,', 'open settings'],

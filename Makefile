@@ -1,4 +1,4 @@
-.PHONY: help install run dev test lint format vault-create vault-mount vault-unmount ollama-pull clean
+.PHONY: help install run dev test lint format vault-create vault-mount vault-unmount vault-wipe ollama-pull clean
 
 VAULT_SPARSEBUNDLE ?= $(HOME)/Library/PersonalAssistant/PA-Vault.sparsebundle
 VAULT_MOUNT ?= /Volumes/PA-Vault
@@ -16,6 +16,7 @@ help:
 	@echo "  make vault-create   Create the encrypted sparsebundle (one-time)"
 	@echo "  make vault-mount    Mount the vault at $(VAULT_MOUNT)"
 	@echo "  make vault-unmount  Unmount the vault"
+	@echo "  make vault-wipe     Delete ./.dev-vault/ so the next \`make dev\` starts fresh"
 	@echo "  make ollama-pull    Pull the chat + embedding models"
 
 install:
@@ -44,6 +45,9 @@ vault-mount:
 
 vault-unmount:
 	./scripts/vault-unmount.sh
+
+vault-wipe:
+	./scripts/vault-wipe.sh
 
 ollama-pull:
 	./scripts/ollama-pull.sh

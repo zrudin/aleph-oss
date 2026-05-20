@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from pa import threads as threads_mod
 from pa.agent import drop_conversation, ensure_thread, run_turn
 from pa.config import settings
+from pa.llm import get_llm, installed_model_names, model_installed
 from pa.tool_gate import get_gate, group_for_tool
 from pa.tools import registry as tools_registry
 from pa.tools import reminders as reminders_tool
@@ -103,6 +104,42 @@ async def health() -> dict:
         "model": settings.chat_model,
         "embed_model": settings.embed_model,
     }
+
+
+@router.get("/ollama/status")
+async def ollama_status() -> JSONResponse:
+    """Diagnostics for the local Ollama server.
+
+    Returns the installed model list, currently-loaded models, and whether
+    the configured chat/embed models are present. Useful to run from a curl
+    or browser tab when chat seems hung.
+    """
+    llm = get_llm()
+    payload: dict[str, Any] = {
+        "host": llm.host,
+        "chat_model": settings.chat_model,
+        "embed_model": settings.embed_model,
+        "reachable": False,
+    }
+    try:
+        listed = await llm.list_models()
+    except Exception as exc:  # noqa: BLE001
+        payload["error"] = f"{type(exc).__name__}: {exc}"
+        return JSONResponse(payload, status_code=503)
+
+    payload["reachable"] = True
+    names = set(installed_model_names(listed))
+    payload["installed"] = sorted(names)
+    payload["chat_model_present"] = model_installed(settings.chat_model, names)
+    payload["embed_model_present"] = model_installed(settings.embed_model, names)
+
+    try:
+        running = await llm.running_models()
+    except Exception as exc:  # noqa: BLE001
+        payload["running_error"] = f"{type(exc).__name__}: {exc}"
+        return JSONResponse(payload)
+    payload["running"] = sorted(installed_model_names(running))
+    return JSONResponse(payload)
 
 
 # ── Chat (SSE) ────────────────────────────────────────────────────
