@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.python-version.local
+build/
+dist/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Vault — never commit personal data or encrypted blobs
+/vault/
+/.dev-vault/
+*.sparsebundle/
+*.sparseimage
+
+# LanceDB / local indexes that may be created during dev
+*.lance/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Private release docs (never ship to the public mirror)
+/RELEASE.md
